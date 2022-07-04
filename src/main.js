@@ -2,57 +2,98 @@
 //   BlockchainParametersWrapper,
 // } = require("@celo/contractkit/lib/wrappers/BlockchainParameters")
 
-const products = [
-  {
-    name: "Giant BBQ",
-    image: "https://i.imgur.com/yPreV19.png",
-    description: `Grilled chicken, beef, fish, sausages, bacon, 
-        vegetables served with chips.`,
-    location: "Kimironko Market",
-    owner: "0x32Be343B94f860124dC4fEe278FDCBD38C102D88",
-    price: 3,
-    sold: 27,
-    index: 0,
-  },
-  {
-    name: "BBQ Chicken",
-    image: "https://i.imgur.com/NMEzoYb.png",
-    description: `French fries and grilled chicken served with gacumbari 
-        and avocados with cheese.`,
-    location: "Afrika Fresh KG 541 St",
-    owner: "0x3275B7F400cCdeBeDaf0D8A9a7C8C1aBE2d747Ea",
-    price: 4,
-    sold: 12,
-    index: 1,
-  },
-  {
-    name: "Beef burrito",
-    image: "https://i.imgur.com/RNlv3S6.png",
-    description: `Homemade tortilla with your choice of filling, cheese, 
-        guacamole salsa with Mexican refried beans and rice.`,
-    location: "Asili - KN 4 St",
-    owner: "0x2EF48F32eB0AEB90778A2170a0558A941b72BFFb",
-    price: 2,
-    sold: 35,
-    index: 2,
-  },
-  {
-    name: "Barbecue Pizza",
-    image: "https://i.imgur.com/fpiDeFd.png",
-    description: `Barbecue Chicken Pizza: Chicken, gouda, pineapple, onions 
-        and house-made BBQ sauce.`,
-    location: "Kigali Hut KG 7 Ave",
-    owner: "0x2EF48F32eB0AEB90778A2170a0558A941b72BFFb",
-    price: 1,
-    sold: 2,
-    index: 3,
-  },
-]
+// import products from "./products"
 
-// https://i.imgur.com/jswLd7Y.jpeg
+import Web3 from "web3"
+import { newKitFromWeb3 } from "@celo/contractkit"
+import BigNumber from "bignumber.js"
+import marketplaceAbi from "../contract/marketplace.abi.json"
+import { render } from "react-dom"
 
-const getBalance = function () {
-  document.querySelector("#balance").textContent = 21
+// By default the ERC20 interface used a value of 18 for decimals
+const ERC20_DECIMALS = 18
+// Deploy new contract and copy ABI to marketplace.abi.json
+const MPContractAddress = "0xE32A4720359B52cF04425BacFFAeEF96E1Ad3e92"
+
+let kit
+let contract
+let products = []
+
+// Connect to the Celo extension wallet
+const connectCeloWallet = async function () {
+  // First check if the user has installed the Celo extension wallet
+  // Check if the 'window.celo' object exists
+  if (window.celo) {
+    try {
+      // If the object does exist notify user they need to approve the DApp
+      notification("⚠️ Please approve this DApp to use it.")
+      // Opens a pop up in the UI that asks for permission to connect the DApp to the wallet
+      await window.celo.enable()
+      //   After Celo is enabled, should disable the notification
+      notificationOff()
+
+      //   Create a web3 object using the window.celo object as provider
+      const web3 = new Web3(window.celo)
+      //   Use web3 object to create new kit instance - save to global variable
+      //   Now the functionality of the connected kit can interact with Celo
+      kit = newKitFromWeb3(web3)
+
+      //   Access the account of the user - return an array of addresses of the connected user.  In the case of the CeloExtensionWallet you receive one address which you can make the kit's default user - can use globally
+      const accounts = await kit.web3.eth.getAccounts()
+      kit.defaultAccount = accounts[0]
+
+      //   Once user connects wallet, create an instance of the marketplace contract so you can interact with it
+      //   Assign global contract variable a new kit.web3.eth.Contract object
+      // Pass the ABI and the address of the contract - will convert function calls into RPC - now can interact with the smart contract as if it were a Javascript object
+      contract = new kit.web3.eth.Contract(marketplaceAbi, MPContractAddress)
+    } catch (error) {
+      // If catch an error notify user they must approve the dialogue box
+      notification("⚠️ ${error}")
+    }
+  } else {
+    // 'window.celo' object does not exist, so notify user to install wallet
+    notification("⚠️ Please install the CeloExtensionWallet")
+  }
+}
+
+// Access and display the user's cUSD account balance
+const getBalance = async function () {
+  // Use kit method to get the balance of the account
+  const totalBalance = await kit.getTotalBalance(kit.defaultAccount)
+  //   Generate a readable cUSD balance - shift comma 18 places to the left and display only two decimal places
+  const cUSDBalance = totalBalance.cUSD.shiftedBy(-ERC20_DECIMALS).toFixed(2)
+  document.querySelector("#balance").textContent = cUSDBalance
+}
+
+// Once you have an instance of the contract to interact with can call functions
+const getProducts = async function () {
+  // Check how many products are stored in the contract
+  // use contract.methods to call contract function and assign it's value
+  const _productsLength = await contract.methods.getProductsLength().call()
+  const _products = []
+
+  for (let i = 0; i < _productsLength; i++) {
+    // For each product create a promise in which call the contract's readProduct function to get product data
+    let _product = new Promise(async (resolve, reject) => {
+      let p = await contract.methods.readProduct(i).call()
+      //   Resolve the promise with the product data
+      // Price needs to be a bigNumber object so you can make correct payments
+      resolve({
+        index: i,
+        owner: p[0],
+        name: p[1],
+        image: p[2],
+        description: p[3],
+        location: p[4],
+        price: new BigNumber(p[5]),
+        sold: p[6],
+      })
+    })
+    _products.push(_product)
+  }
+  //   Once all promises in this asynchronous operation are fulfilled, render the products array
+  products = await Promise.all(_products)
+  renderProducts()
 }
 
 // Display products
@@ -96,7 +137,10 @@ function productTemplate(_product) {
                 <a class="btn btn-lg btn-outline-dark buyBtn fs-6 p-3" id=${
                   _product.index
                 }>
-                Buy for ${_product.price} cUSD
+                Buy for ${_product.price
+                  // Dealing with BigNumbers so need to shift the price again
+                  .shiftedBy(-ERC20_DECIMALS)
+                  .toFixed(2)} cUSD
                 </a>
             </div>
         </div>
@@ -138,31 +182,46 @@ function notificationOff() {
 }
 
 // Event handlers
-window.addEventListener("load", () => {
+window.addEventListener("load", async () => {
   // Once the DApp is loaded call notification, display balance, render products and then disable notification
   notification("⌛ Loading...")
-  getBalance()
-  renderProducts()
+  await connectCeloWallet()
+  await getBalance()
+  await getProducts()
+  //   renderProducts()
   notificationOff()
 })
 
 // Add a new product from modal input form
-document.querySelector("#newProductBtn").addEventListener("click", () => {
-  const _product = {
-    owner: "0x2EF48F32eB0AEB90778A2170a0558A941b72BFFb",
-    name: document.getElementById("newProductName").value,
-    image: document.getElementById("newImgUrl").value,
-    description: document.getElementById("newProductDescription").value,
-    location: document.getElementById("newLocation").value,
-    price: document.getElementById("newPrice").value,
-    sold: 0,
-    index: products.length,
-  }
+document
+  .querySelector("#newProductBtn")
+  .addEventListener("click", async (e) => {
+    // In params array store all parameters from the form
+    // Note - price value - need to create a bigNumber and convert in a way that the contract can understand
+    const params = [
+      document.getElementById("newProductName").value,
+      document.getElementById("newImgUrl").value,
+      document.getElementById("newProductDescription").value,
+      document.getElementById("newLocation").value,
+      new BigNumber(document.getElementById("newPrice").value)
+        .shiftedBy(ERC20_DECIMALS)
+        .toString(),
+    ]
+    // Show notification that new product being added
+    notification(`⌛ Adding "${params[0]}"`)
 
-  products.push(_product)
-  notification(`🎉 You successfully added "${_product.name}"`)
-  renderProducts()
-})
+    try {
+      const result = await contract.methods
+        // use writeProduct with saved params
+        .writeProduct(...params)
+        // Since sending a transaction and executing method - need send method
+        .send({ from: kit.defaultAccount })
+    } catch (error) {
+      notification(`⚠️ ${error}`)
+    }
+    notification(`🎉 You successfully added "${params[0]}"`)
+    getProducts()
+  })
 
 // User buys a product
 document.querySelector("#marketplace").addEventListener("click", (e) => {
@@ -174,3 +233,21 @@ document.querySelector("#marketplace").addEventListener("click", (e) => {
     renderProducts()
   }
 })
+
+// Initial create new product form functionality
+// document.querySelector("#newProductBtn").addEventListener("click", () => {
+//   const _product = {
+//     owner: "0x2EF48F32eB0AEB90778A2170a0558A941b72BFFb",
+//     name: document.getElementById("newProductName").value,
+//     image: document.getElementById("newImgUrl").value,
+//     description: document.getElementById("newProductDescription").value,
+//     location: document.getElementById("newLocation").value,
+//     price: document.getElementById("newPrice").value,
+//     sold: 0,
+//     index: products.length,
+//   }
+
+//   products.push(_product)
+//   notification(`🎉 You successfully added "${_product.name}"`)
+//   renderProducts()
+// })
