@@ -1,14 +1,9 @@
-// const {
-//   BlockchainParametersWrapper,
-// } = require("@celo/contractkit/lib/wrappers/BlockchainParameters")
-
 // import products from "./products"
 
 import Web3 from "web3"
 import { newKitFromWeb3 } from "@celo/contractkit"
 import BigNumber from "bignumber.js"
 import marketplaceAbi from "../contract/marketplace.abi.json"
-import { render } from "react-dom"
 
 // By default the ERC20 interface used a value of 18 for decimals
 const ERC20_DECIMALS = 18
