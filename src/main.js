@@ -4,11 +4,14 @@ import Web3 from "web3"
 import { newKitFromWeb3 } from "@celo/contractkit"
 import BigNumber from "bignumber.js"
 import marketplaceAbi from "../contract/marketplace.abi.json"
+import erc20Abi from "../contract/erc20.abi.json"
 
 // By default the ERC20 interface used a value of 18 for decimals
 const ERC20_DECIMALS = 18
 // Deploy new contract and copy ABI to marketplace.abi.json
 const MPContractAddress = "0xE32A4720359B52cF04425BacFFAeEF96E1Ad3e92"
+// Address of the cUSD contract on the alfajores testnet
+const cUSDContractAddress = "0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1"
 
 let kit
 let contract
@@ -49,6 +52,19 @@ const connectCeloWallet = async function () {
     // 'window.celo' object does not exist, so notify user to install wallet
     notification("⚠️ Please install the CeloExtensionWallet")
   }
+}
+
+// Get user's approval to make a transaction for a certain amount of token - called the allowance
+async function approve(_price) {
+  // Create a cUSD contract instance with the ABI and contract address
+  const cUSDContract = new kit.web3.eth.Contract(erc20Abi, cUSDContractAddress)
+
+  //   Call the cUSD contract method 'approve' - need to specify the contract address that will be allowed to make transactions and the amount (price)
+  // Also need to specify who is going to spend the token - address stored in kit.defaultAccount
+  const result = await cUSDContract.methods
+    .approve(MPContractAddress, _price)
+    .send({ from: kit.defaultAccount })
+  return result
 }
 
 // Access and display the user's cUSD account balance
@@ -219,13 +235,34 @@ document
   })
 
 // User buys a product
-document.querySelector("#marketplace").addEventListener("click", (e) => {
+document.querySelector("#marketplace").addEventListener("click", async (e) => {
   if (e.target.className.includes("buyBtn")) {
-    console.log(e.target.id)
+    // console.log(e.target.id)
     const index = e.target.id
-    products[index].sold++
-    notification(`🎉 You successfully bought "${products[index].name}"`)
-    renderProducts()
+    notification("⌛ Waiting for payment approval...")
+    try {
+      // Get approval for the token amount
+      await approve(products[index].price)
+    } catch (error) {
+      notification(`⚠️ ${error}`)
+    }
+
+    notification(`⌛ Awaiting payment for "${products[index].name}"...`)
+
+    try {
+      const result = await contract.methods
+        .buyProduct(index)
+        .send({ from: kit.defaultAccount })
+      notification(`🎉 You successfully bought "${products[index].name}".`)
+      getProducts()
+      getBalance()
+    } catch (error) {
+      notification(`⚠️ ${error}`)
+    }
+
+    // products[index].sold++
+    // notification(`🎉 You successfully bought "${products[index].name}"`)
+    // renderProducts()
   }
 })
 
