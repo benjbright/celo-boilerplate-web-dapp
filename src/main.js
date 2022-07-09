@@ -9,6 +9,7 @@ import erc20Abi from "../contract/erc20.abi.json"
 // By default the ERC20 interface used a value of 18 for decimals
 const ERC20_DECIMALS = 18
 // Deploy new contract and copy ABI to marketplace.abi.json
+// Address of deployed contract on Celo testnet
 const MPContractAddress = "0xE32A4720359B52cF04425BacFFAeEF96E1Ad3e92"
 // Address of the cUSD contract on the alfajores testnet
 const cUSDContractAddress = "0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1"
